@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#111827">
+<title>Rota Inteligente</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#f3f4f6;color:#111827;font-family:Arial,sans-serif}
+header{background:#111827;color:#fff;text-align:center;padding:22px 14px}
+header h1{margin:0 0 7px;font-size:25px}header p{margin:0;font-size:14px}
+main{max-width:720px;margin:auto;padding:12px}.card{background:#fff;border-radius:16px;padding:16px;margin:12px 0;box-shadow:0 2px 9px #00000012}
+h2{font-size:19px;margin:0 0 12px}label{font-weight:bold;font-size:14px}
+input{width:100%;padding:13px;border:1px solid #d1d5db;border-radius:10px;font-size:16px;margin:6px 0 10px}
+button{width:100%;padding:14px;border:0;border-radius:10px;font-size:15px;font-weight:bold;margin:5px 0;cursor:pointer}
+.blue{background:#2563eb;color:#fff}.dark{background:#111827;color:#fff}.gray{background:#e5e7eb;color:#111827}.red{background:#fee2e2;color:#991b1b}
+.tabs{display:flex;gap:7px;margin-bottom:12px}.tabs button{margin:0}.tabs .active{background:#111827;color:#fff}.hidden{display:none!important}
+.status{font-size:13px;color:#6b7280;margin-top:7px;line-height:1.45}.ok{color:#047857}.bad{color:#b91c1c}
+.item{border:1px solid #e5e7eb;border-radius:10px;padding:11px;margin:7px 0;background:#fafafa}.item b{display:block;margin-bottom:4px}
+</style>
+</head>
+<body>
+<header>
+<h1>🧭 Rota Inteligente</h1>
+<p>Base de endereços e memória de nomes locais</p>
+</header>
+
+<main>
+<div class="tabs">
+<button id="tabRota" class="dark">🚗 Rota</button>
+<button id="tabMemoria" class="gray">🧠 Minha memória</button>
+</div>
+
+<section id="pageRota">
+<div class="card">
+<h2>🏙️ Cidade</h2>
+<label>Nome da cidade</label>
+<input id="city" placeholder="Ex.: Pilar, AL">
+<button id="saveCity" class="blue">Salvar cidade</button>
+<div id="cityStatus" class="status">Digite uma cidade e toque em salvar.</div>
+</div>
+
+<div class="card">
+<h2>📍 Localização</h2>
+<button id="gps" class="blue">Usar minha localização atual</button>
+<div id="gpsStatus" class="status">Ainda não definida.</div>
+</div>
+
+<div class="card">
+<h2>📄 Próxima etapa</h2>
+<div class="status">Depois que cidade e localização estiverem funcionando, vamos adicionar a planilha e a rota.</div>
+</div>
+</section>
+
+<section id="pageMemoria" class="hidden">
+<div class="card">
+<h2>🧠 Minha memória</h2>
+<label>Cidade</label>
+<input id="mCity" placeholder="Ex.: Pilar, AL">
+<label>Nome que aparece na planilha</label>
+<input id="alias" placeholder="Ex.: Rua da Feira">
+<label>Local correto</label>
+<input id="real" placeholder="Ex.: Rua José da Silva, 120, Centro">
+<button id="saveMemory" class="blue">Salvar associação</button>
+<div id="memoryStatus" class="status"></div>
+</div>
+
+<div class="card">
+<h2>📚 Memórias salvas</h2>
+<div id="memoryList"></div>
+</div>
+</section>
+</main>
+
+<script>
+(function(){
+"use strict";
+
+var KEY="rota_memoria_v6";
+var CITYKEY="rota_cidade_v6";
+
+function byId(id){return document.getElementById(id)}
+function normalize(s){
+ return String(s||"").toLowerCase().normalize("NFD").replace(/[\\u0300-\\u036f]/g,"").replace(/[^a-z0-9]+/g," ").trim();
+}
+function readDB(){
+ try{return JSON.parse(localStorage.getItem(KEY)||"{}")}catch(e){return {}}
+}
+function writeDB(db){localStorage.setItem(KEY,JSON.stringify(db))}
+function status(id,msg,cls){
+ var e=byId(id);e.textContent=msg;e.className="status "+(cls||"");
+}
+
+/* abas */
+byId("tabRota").addEventListener("click",function(){
+ byId("pageRota").classList.remove("hidden");
+ byId("pageMemoria").classList.add("hidden");
+ byId("tabRota").className="dark";
+ byId("tabMemoria").className="gray";
+});
+byId("tabMemoria").addEventListener("click",function(){
+ byId("pageRota").classList.add("hidden");
+ byId("pageMemoria").classList.remove("hidden");
+ byId("tabRota").className="gray";
+ byId("tabMemoria").className="dark";
+ byId("mCity").value=byId("city").value||localStorage.getItem(CITYKEY)||"";
+ renderMemory();
+});
+
+/* cidade */
+var oldCity=localStorage.getItem(CITYKEY)||"";
+if(oldCity){byId("city").value=oldCity;byId("mCity").value=oldCity}
+
+byId("saveCity").addEventListener("click",function(){
+ var c=byId("city").value.trim();
+ if(!c){status("cityStatus","Digite a cidade antes de salvar.","bad");return}
+ localStorage.setItem(CITYKEY,c);
+ byId("mCity").value=c;
+ status("cityStatus","Cidade salva: "+c,"ok");
+});
+
+/* gps */
+byId("gps").addEventListener("click",function(){
+ if(!navigator.geolocation){
+  status("gpsStatus","Seu navegador não oferece localização.","bad");return
+ }
+ status("gpsStatus","Pedindo permissão para usar sua localização...");
+ navigator.geolocation.getCurrentPosition(function(pos){
+  localStorage.setItem("rota_lat_v6",String(pos.coords.latitude));
+  localStorage.setItem("rota_lon_v6",String(pos.coords.longitude));
+  status("gpsStatus","Localização encontrada: "+pos.coords.latitude.toFixed(5)+", "+pos.coords.longitude.toFixed(5),"ok");
+ },function(err){
+  var msg="Não foi possível obter sua localização.";
+  if(err.code===1)msg="Você negou a localização. Permita a localização para este site e tente novamente.";
+  if(err.code===2)msg="Localização indisponível. Ative o GPS/localização do celular.";
+  if(err.code===3)msg="Tempo esgotado. Tente novamente.";
+  status("gpsStatus",msg,"bad");
+ },{enableHighAccuracy:true,timeout:20000,maximumAge:0});
+});
+
+/* memória */
+byId("saveMemory").addEventListener("click",function(){
+ var city=byId("mCity").value.trim();
+ var alias=byId("alias").value.trim();
+ var real=byId("real").value.trim();
+ if(!city||!alias||!real){
+  status("memoryStatus","Preencha os três campos.","bad");return
+ }
+ var db=readDB(),key=normalize(city);
+ if(!db[key])db[key]=[];
+ var existing=null;
+ for(var i=0;i<db[key].length;i++){
+  if(normalize(db[key][i].alias)===normalize(alias)){existing=db[key][i];break}
+ }
+ if(existing){existing.real=real}
+ else db[key].push({alias:alias,real:real});
+ writeDB(db);
+ byId("city").value=city;localStorage.setItem(CITYKEY,city);
+ byId("alias").value="";byId("real").value="";
+ status("memoryStatus","Salvo! '"+alias+"' agora está associado a '"+real+"'.","ok");
+ renderMemory();
+});
+
+function renderMemory(){
+ var city=byId("mCity").value.trim();
+ var list=city?(readDB()[normalize(city)]||[]):[];
+ var box=byId("memoryList");
+ box.innerHTML="";
+ if(!city){box.innerHTML='<div class="status">Digite uma cidade.</div>';return}
+ if(!list.length){box.innerHTML='<div class="status">Nenhuma associação salva para esta cidade.</div>';return}
+ for(var i=0;i<list.length;i++){
+  var d=document.createElement("div");d.className="item";
+  d.innerHTML="<b>"+escapeHtml(list[i].alias)+"</b>"+escapeHtml(list[i].real)+
+   "<button class='red' data-index='"+i+"'>Apagar</button>";
+  box.appendChild(d);
+ }
+ var buttons=box.querySelectorAll("button");
+ for(var j=0;j<buttons.length;j++)buttons[j].addEventListener("click",function(){
+  var db=readDB(),k=normalize(city);db[k].splice(Number(this.dataset.index),1);writeDB(db);renderMemory();
+ });
+}
+byId("mCity").addEventListener("input",renderMemory);
+
+function escapeHtml(s){
+ return String(s).replace(/[&<>"']/g,function(c){
+  return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#039;"}[c]
+ })
+}
+})();
+</script>
+</body>
+</html>
